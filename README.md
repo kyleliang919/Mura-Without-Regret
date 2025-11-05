@@ -98,13 +98,4 @@ Run `list` to see them on your machine; here they are for convenience:
 ---
 
 ### References (what this launcher encodes)
-
-* TRL doc “LoRA Without Regret”: models/datasets, “all-linear” target, SFT example hyperparams, RL rank guidance, batch-size note, and SmolLM3 LoRA vs FullFT table. ([Hugging Face][1])
-* Official GRPO reference script (reward function + GRPOTrainer wiring). ([Hugging Face][2])
-* TRL CLI usage & flags. ([Hugging Face][3])
-
-If you want, I can also add toggles for **DeepSpeed** / **FSDP** profiles via `--accelerate_config` presets (e.g., `zero2`, `zero3`) and a `--hf_token` guard that checks env. ([Hugging Face][3])
-
-[1]: https://huggingface.co/docs/trl/main/en/lora_without_regret?grpo=local&sft=python "LoRA Without Regret"
-[2]: https://huggingface.co/datasets/burtenshaw/lora-without-regrets/blob/main/grpo.py "grpo.py · burtenshaw/lora-without-regrets at main"
-[3]: https://huggingface.co/docs/trl/main/en/clis "Command Line Interfaces (CLIs)"
+> [1]: https://huggingface.co/docs/trl/main/en/lora_without_regret?grpo=local&sft=python "LoRA Without Regret"

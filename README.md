@@ -5,11 +5,11 @@ Seamlessly incorporating Muon with Lora by modifying backpropagation
 * **GRPO experiments** (3 combos) from the doc (Llama-3.1-8B-Base on GSM8k/DeepMath-103K, Qwen3-8B-Base on DeepMath-103K) and the **SmolLM3** LoRA-vs-FullFT parameter table (so you can replicate the figure) using the official `grpo.py` reference script. ([Hugging Face][1])
 
 > Notes this launcher bakes in from the sources:
-> • Apply LoRA to **all-linear** weights (`--lora_target_modules all-linear`). ([Hugging Face][1])
-> • SFT: LoRA rank **256** (“post-training scale” guidance), LR ≈ **2e-4** in the example. ([Hugging Face][1])
-> • GRPO: small LoRA ranks (**1–32**, default 1), and **effective batch < 32**. ([Hugging Face][1])
-> • SmolLM3 GRPO table (LoRA vs FullFT): specific LR and lengths used in the doc’s reproduction table. ([Hugging Face][1])
-> • Official GRPO script (reward function & Trainer wiring) lives here: `burtenshaw/lora-without-regrets/grpo.py`. ([Hugging Face][2])
+> * Apply LoRA to **all-linear** weights (`--lora_target_modules all-linear`). ([Hugging Face][1])
+> * SFT: LoRA rank **256** (“post-training scale” guidance), LR ≈ **2e-4** in the example. ([Hugging Face][1])
+> * GRPO: small LoRA ranks (**1–32**, default 1), and **effective batch < 32**. ([Hugging Face][1])
+> * SmolLM3 GRPO table (LoRA vs FullFT): specific LR and lengths used in the doc’s reproduction table. ([Hugging Face][1])
+> * Official GRPO script (reward function & Trainer wiring) lives here: `burtenshaw/lora-without-regrets/grpo.py`. ([Hugging Face][2])
 
 ---
 

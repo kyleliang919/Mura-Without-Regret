@@ -96,6 +96,3 @@ Run `list` to see them on your machine; here they are for convenience:
   `python grpo.py --model_name_or_path HuggingFaceTB/SmolLM3-3B --dataset_name HuggingFaceH4/OpenR1-Math-220k-default-verified --output_dir runs/grpo-smollm3-fullft --run_name grpo-smollm3-fullft --per_device_train_batch_size 1 --gradient_accumulation_steps 4 --generation_batch_size 8 --num_generations 8 --learning_rate 1e-6 --max_prompt_length 1024 --max_completion_length 4096`
 
 ---
-
-### References (what this launcher encodes)
-> [1]: https://huggingface.co/docs/trl/main/en/lora_without_regret?grpo=local&sft=python "LoRA Without Regret"

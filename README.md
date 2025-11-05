@@ -1,98 +1,218 @@
-# Mura-Without-Regret
-Seamlessly incorporating Muon with Lora by modifying backpropagation
+# 🚀 LoRA Without Regret — Multi-GPU Launcher
 
-* **SFT experiments** (4 combos) suggested in the doc (Llama-3.2-1B / Llama-3.1-8B × Tulu-3-SFT-mixture / OpenThoughts-114k) with LoRA on **all linear layers** and recommended rank/capacity. ([Hugging Face][1])
-* **GRPO experiments** (3 combos) from the doc (Llama-3.1-8B-Base on GSM8k/DeepMath-103K, Qwen3-8B-Base on DeepMath-103K) and the **SmolLM3** LoRA-vs-FullFT parameter table (so you can replicate the figure) using the official `grpo.py` reference script. ([Hugging Face][1])
-
-> Notes this launcher bakes in from the sources:
-> * Apply LoRA to **all-linear** weights (`--lora_target_modules all-linear`). ([Hugging Face][1])
-> * SFT: LoRA rank **256** (“post-training scale” guidance), LR ≈ **2e-4** in the example. ([Hugging Face][1])
-> * GRPO: small LoRA ranks (**1–32**, default 1), and **effective batch < 32**. ([Hugging Face][1])
-> * SmolLM3 GRPO table (LoRA vs FullFT): specific LR and lengths used in the doc’s reproduction table. ([Hugging Face][1])
-> * Official GRPO script (reward function & Trainer wiring) lives here: `burtenshaw/lora-without-regrets/grpo.py`. ([Hugging Face][2])
+A unified launcher script to reproduce all experiments from the [**TRL “LoRA Without Regret” guide**](https://huggingface.co/docs/trl/main/en/lora_without_regret), including both **Supervised Fine-Tuning (SFT)** and **GRPO (RL)** runs.  
+Fully configured for **8-GPU parallel training** and **Weights & Biases (wandb)** logging.
 
 ---
 
-### How to use
-
-1. **Install** TRL CLI (and deps used by the GRPO script):
+## ⚡️ Quickstart
 
 ```bash
-pip install "trl>=0.24" peft trackio math-verify latex2sympy2-extended
-# (optional) accelerate deepspeed bitsandbytes if you plan to scale
+# 1. Install dependencies
+pip install "trl>=0.24" peft wandb accelerate
+
+# 2. Log in to wandb
+wandb login
+
+# 3. Download the official GRPO script
+wget -O grpo.py https://huggingface.co/datasets/burtenshaw/lora-without-regrets/resolve/main/grpo.py
+
+# 4. Run any experiment (multi-GPU + wandb)
+python launch_lora_without_regret.py run sft-llama-1b-tulu3
+````
+
+> 💡 To view all commands:
+>
+> ```bash
+> python launch_lora_without_regret.py list
+> ```
+
+---
+
+## 🧱 Requirements
+
+Install core packages:
+
+```bash
+pip install "trl>=0.24" peft wandb accelerate
 ```
 
-2. **Fetch the official GRPO reference script** (used for all GRPO runs):
+Authenticate Weights & Biases:
+
+```bash
+wandb login
+```
+
+Fetch the official GRPO reference script (for reward shaping and policy updates):
 
 ```bash
 wget -O grpo.py https://huggingface.co/datasets/burtenshaw/lora-without-regrets/resolve/main/grpo.py
 ```
 
-3. **List every command** this launcher will run:
+---
+
+## ⚙️ Multi-GPU Configuration
+
+The launcher automatically uses all 8 GPUs through `accelerate`:
+
+```bash
+accelerate launch --num_processes 8 --mixed_precision bf16 --gpu_ids all --rdzv_backend c10d
+```
+
+To customize, override the prefix with an environment variable:
+
+```bash
+export ACCEL_PREFIX='accelerate launch --num_processes 8 --mixed_precision bf16 --deepspeed_config_file ds_zero2.json'
+```
+
+### (Optional) DeepSpeed ZeRO-2 Config Example
+
+Save this as `ds_zero2.json`:
+
+```json
+{
+  "zero_optimization": {
+    "stage": 2,
+    "overlap_comm": true,
+    "reduce_scatter": true,
+    "contiguous_gradients": true
+  },
+  "bf16": { "enabled": true },
+  "gradient_accumulation_steps": "auto",
+  "train_micro_batch_size_per_gpu": "auto"
+}
+```
+
+---
+
+## 📦 Running Experiments
+
+### 1. List All Commands
 
 ```bash
 python launch_lora_without_regret.py list
-# or filter:
+```
+
+Filter by substring (e.g., only SFT):
+
+```bash
 python launch_lora_without_regret.py list --filter sft-
 ```
 
-4. **Dry-run a single experiment** (print command only):
+---
+
+### 2. Run a Single Experiment
+
+```bash
+python launch_lora_without_regret.py run sft-llama-1b-tulu3
+python launch_lora_without_regret.py run grpo-llama8b-gsm8k
+```
+
+Preview only (no execution):
 
 ```bash
 python launch_lora_without_regret.py run sft-llama-1b-tulu3 --dry
 ```
 
-5. **Execute a single experiment**:
+---
+
+### 3. Run Multiple or All Experiments
+
+Run several by name pattern:
 
 ```bash
-python launch_lora_without_regret.py run grpo-smollm3-lora
+python launch_lora_without_regret.py run-many sft- grpo-llama8b-
 ```
 
-6. **Run everything** (or a subset):
+Run the full suite:
 
 ```bash
-python launch_lora_without_regret.py run-all --dry     # just show all commands
-python launch_lora_without_regret.py run-all           # execute all
-python launch_lora_without_regret.py run-many sft- grpo-llama8b-
+python launch_lora_without_regret.py run-all
 ```
 
 ---
 
-### What’s included (exact commands)
+## 🧩 Experiment Matrix
 
-Run `list` to see them on your machine; here they are for convenience:
+| Type     | Model                 | Dataset            | Notes                      |
+| -------- | --------------------- | ------------------ | -------------------------- |
+| **SFT**  | Llama-3.2-1B-Instruct | Tulu-3-SFT-Mixture | LoRA rank = 256, LR = 2e-4 |
+| **SFT**  | Llama-3.2-1B-Instruct | OpenThoughts-114k  | same setup                 |
+| **SFT**  | Llama-3.1-8B-Instruct | Tulu-3-SFT-Mixture |                            |
+| **SFT**  | Llama-3.1-8B-Instruct | OpenThoughts-114k  |                            |
+| **GRPO** | Llama-3.1-8B-Base     | GSM8K              | LoRA rank = 1, LR = 5e-5   |
+| **GRPO** | Llama-3.1-8B-Base     | DeepMath-103K      |                            |
+| **GRPO** | Qwen3-8B-Base         | DeepMath-103K      |                            |
+| **GRPO** | SmolLM3-3B            | OpenR1-Math-220k   | LoRA vs Full-FT comparison |
 
-#### SFT (LoRA on all-linear, r=256, LR=2e-4; eff batch size < 32) ([Hugging Face][1])
+All SFT runs apply **LoRA on all linear layers**, and GRPO runs use the **official reference reward script**.
 
-* `sft-llama-1b-tulu3`
-  `trl sft --model_name_or_path meta-llama/Llama-3.2-1B-Instruct --dataset_name allenai/tulu-3-sft-mixture --use_peft --lora_target_modules all-linear --lora_r 256 --lora_alpha 16 --lora_dropout 0.0 --learning_rate 2e-4 --per_device_train_batch_size 1 --gradient_accumulation_steps 4 --num_train_epochs 1 --report_to trackio --output_dir runs/sft-llama-1b-tulu3 --run_name sft-llama-1b-tulu3`
+---
 
-* `sft-llama-1b-openthoughts`
-  (same flags, dataset = `open-thoughts/OpenThoughts-114k`)
+## 📊 Weights & Biases Logging
 
-* `sft-llama-8b-tulu3`
-  (model = `meta-llama/Llama-3.1-8B-Instruct`, dataset = `allenai/tulu-3-sft-mixture`)
+Each run reports automatically to **wandb**:
 
-* `sft-llama-8b-openthoughts`
-  (model = `meta-llama/Llama-3.1-8B-Instruct`, dataset = `open-thoughts/OpenThoughts-114k`)
+* Project: `lora_without_regret`
+* Run name: experiment ID (e.g., `sft-llama-1b-tulu3`)
 
-#### GRPO (LoRA small rank for RL; reward wired via reference script) ([Hugging Face][1])
+You can override defaults:
 
-* `grpo-llama8b-gsm8k`
-  `python grpo.py --model_name_or_path meta-llama/Llama-3.1-8B-Base --dataset_name openai/gsm8k --output_dir runs/grpo-llama8b-gsm8k --run_name grpo-llama8b-gsm8k --per_device_train_batch_size 1 --gradient_accumulation_steps 4 --generation_batch_size 8 --num_generations 8 --learning_rate 5e-5 --use_peft --lora_target_modules all-linear --lora_r 1 --lora_alpha 32 --lora_dropout 0.0`
+```bash
+export WANDB_PROJECT=lora_without_regret
+export WANDB_ENTITY=<your_username_or_team>
+```
 
-* `grpo-llama8b-deepmath`
-  (dataset = `HuggingFaceH4/DeepMath-103K`)
+All outputs go to `runs/<experiment_name>` and logs to `wandb_logs/`.
 
-* `grpo-qwen8b-deepmath`
-  (model = `Qwen/Qwen3-8B-Base`, dataset = `HuggingFaceH4/DeepMath-103K`)
+---
 
-#### GRPO SmolLM3 – **LoRA vs FullFT** (matches doc’s table) ([Hugging Face][1])
+## 🧠 Tips
 
-* `grpo-smollm3-lora`
-  `python grpo.py --model_name_or_path HuggingFaceTB/SmolLM3-3B --dataset_name HuggingFaceH4/OpenR1-Math-220k-default-verified --output_dir runs/grpo-smollm3-lora --run_name grpo-smollm3-lora --per_device_train_batch_size 1 --gradient_accumulation_steps 4 --generation_batch_size 8 --num_generations 8 --learning_rate 1e-5 --max_prompt_length 1024 --max_completion_length 4096 --use_peft --lora_target_modules all-linear --lora_r 1 --lora_alpha 32 --lora_dropout 0.0`
+* **Effective batch size** = `num_gpus × per_device_train_batch_size × gradient_accumulation_steps`
+  (default = 8 × 1 × 4 = 32 samples per optimizer step)
+* Increase `gradient_accumulation_steps` before enlarging micro-batch to keep LoRA stable.
+* Use `--gradient_checkpointing` for memory savings on large models.
+* `--dry` shows commands before launching distributed jobs.
 
-* `grpo-smollm3-fullft`
-  `python grpo.py --model_name_or_path HuggingFaceTB/SmolLM3-3B --dataset_name HuggingFaceH4/OpenR1-Math-220k-default-verified --output_dir runs/grpo-smollm3-fullft --run_name grpo-smollm3-fullft --per_device_train_batch_size 1 --gradient_accumulation_steps 4 --generation_batch_size 8 --num_generations 8 --learning_rate 1e-6 --max_prompt_length 1024 --max_completion_length 4096`
+---
+
+## 🏁 Example: SFT Command
+
+```bash
+accelerate launch --num_processes 8 --mixed_precision bf16 --gpu_ids all --rdzv_backend c10d \
+trl sft \
+  --model_name_or_path meta-llama/Llama-3.2-1B-Instruct \
+  --dataset_name allenai/tulu-3-sft-mixture \
+  --use_peft --lora_target_modules all-linear --lora_r 256 --lora_alpha 16 --lora_dropout 0.0 \
+  --learning_rate 2e-4 --per_device_train_batch_size 1 --gradient_accumulation_steps 4 \
+  --num_train_epochs 1 \
+  --report_to wandb --logging_dir wandb_logs \
+  --output_dir runs/sft-llama-1b-tulu3 --run_name sft-llama-1b-tulu3
+```
+
+---
+
+## 🏁 Example: GRPO Command
+
+```bash
+accelerate launch --num_processes 8 --mixed_precision bf16 --gpu_ids all --rdzv_backend c10d \
+python grpo.py \
+  --model_name_or_path meta-llama/Llama-3.1-8B-Base \
+  --dataset_name openai/gsm8k \
+  --output_dir runs/grpo-llama8b-gsm8k --run_name grpo-llama8b-gsm8k \
+  --per_device_train_batch_size 1 --gradient_accumulation_steps 4 \
+  --generation_batch_size 8 --num_generations 8 \
+  --learning_rate 5e-5 \
+  --use_peft --lora_target_modules all-linear --lora_r 1 --lora_alpha 32 --lora_dropout 0.0 \
+  --report_to wandb --wandb_project lora_without_regret --wandb_name grpo-llama8b-gsm8k --logging_dir wandb_logs
+```
+
+---
+
+### 📚 References
+
+* **TRL Documentation:** [LoRA Without Regret](https://huggingface.co/docs/trl/main/en/lora_without_regret)
+* **Official GRPO Script:** [`burtenshaw/lora-without-regrets/grpo.py`](https://huggingface.co/datasets/burtenshaw/lora-without-regrets/blob/main/grpo.py)
 
 ---

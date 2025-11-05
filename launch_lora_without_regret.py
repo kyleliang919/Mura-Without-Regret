@@ -41,14 +41,18 @@ def add_common_sft_flags(base, outdir, run_name, lr="2e-4", per_device=1, grad_a
         --report_to wandb \
         --logging_dir wandb_logs \
         --output_dir {outdir} \
-        --run_name {run_name}
+        --run_name {run_name} \
+        --ddp_find_unused_parameters False \
     """
     return base + " " + " ".join(extra.split())
 
 def mk_sft_cmd(model, dataset, outdir, run_name, **kw):
-    base = f"trl sft --model_name_or_path {model} --dataset_name {dataset}"
+    # Use TRL CLI directly; it accepts Accelerate args like --num_processes
+    TRL_BIN = os.environ.get("TRL_BIN", "trl")
+    accel = "--num_processes 8 --mixed_precision bf16 --gpu_ids all"
+    base = f"{TRL_BIN} sft {accel} --model_name_or_path {model} --dataset_name {dataset}"
     cmd = add_common_sft_flags(base, outdir, run_name, **kw)
-    return with_accel(cmd)
+    return cmd
 
 # -------------------------------------------------
 # GRPO helpers (reference script)
@@ -66,7 +70,7 @@ def mk_grpo_cmd_with_ref_script(grpo_py, model, dataset,
     Uses the official GRPO reference script.
     """
     pieces = [
-        f"python {grpo_py}",
+        f"{sys.executable} {grpo_py}",
         f"--model_name_or_path {model}",
         f"--dataset_name {dataset}",
         f"--output_dir {outdir}",

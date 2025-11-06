@@ -1,4 +1,4 @@
-# 🚀 LoRA Without Regret — Multi-GPU Launcher
+# 🚀 LoRA (Mura) Without Regret — Multi-GPU Launcher
 
 A unified launcher script to reproduce all experiments from the [**TRL “LoRA Without Regret” guide**](https://huggingface.co/docs/trl/main/en/lora_without_regret), including both **Supervised Fine-Tuning (SFT)** and **GRPO (RL)** runs.  
 Fully configured for **8-GPU parallel training** and **Weights & Biases (wandb)** logging.

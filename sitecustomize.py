@@ -1,10 +1,11 @@
 # sitecustomize.py
 import os, math, torch
 import torch.nn as nn
+import torch.distributed as dist
 from torch.autograd import Function
 
 _USE_COMPILE = os.environ.get("LORA_NS_NO_COMPILE", "0") != "1"
-_USE_MURA = os.environ.get("USE_MURA", "0") != "1"
+_USE_MURA = os.environ.get("USE_MURA", "0") == "1"
 
 def _zeropower_via_newtonschulz5_impl(G, steps: int):
     assert G.ndim >= 2
@@ -59,10 +60,19 @@ class LinearFunction(Function):
             go2 = grad_out.reshape(B, grad_out.shape[-1])
         # vanilla dW (out,in)
         grad_weight = go2.t().matmul(x2.to(go2.dtype))
+        
+        # Toggle via env var (default on): LORA_NS_ALLREDUCE_WGRAD=1
+        if os.getenv("LORA_NS_ALLREDUCE_WGRAD", "1") != "0":
+            if dist.is_available() and dist.is_initialized():
+                dist.all_reduce(grad_weight, op=dist.ReduceOp.SUM)
+                world_size = dist.get_world_size()
+                if world_size > 1:
+                    grad_weight = grad_weight / world_size
+
         # NS-processed map to U,V (do NS in stable dtype)
         ns = zeropower_via_newtonschulz5(grad_weight, steps=5).to(v.dtype)  # (out,in)
-        grad_u = (v.matmul(ns)).t() * s        # (in,r)
-        grad_v = (ns.matmul(u)).t() * s        # (r,out)
+        grad_u =  (v.matmul(ns)).t() * s        # (in,r)
+        grad_v =  (ns.matmul(u)).t() * s        # (r,out)
         grad_bias = grad_out.sum(dim=tuple(range(grad_out.ndim - 1))) if ctx.has_bias else None
         # grads: (x, weight, u, v, scale, bias); scale is buffer/hparam -> None
         return grad_x, grad_weight, grad_u, grad_v, None, grad_bias
@@ -98,8 +108,8 @@ class LoraLinearNS(nn.Module):
 # --- Patch PEFT before model construction so VERL uses our class on the ACTOR
 try:
     import peft.tuners.lora.layer as loralayer
-    loralayer.LoraLinear = LoraLinearNS
     if _USE_MURA:
+        loralayer.LoraLinear = LoraLinearNS
         print("[sitecustomize] Patched PEFT LoraLinear -> LoraLinearNS (FSDP-safe; alpha/r; NS backward).")
     else:
         print("[sitecustomize] using orignal LoraLinear implementation.")

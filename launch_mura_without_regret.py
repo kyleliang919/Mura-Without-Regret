@@ -1,13 +1,101 @@
 #!/usr/bin/env python3
 import argparse, subprocess, os, sys
 
+# --- Force-install local sitecustomize into the Python env used by TRL/Accelerate ---
+from pathlib import Path
+import os, sys, subprocess, textwrap, shutil
+
+REPO_ROOT = Path(__file__).resolve().parent
+SITECUSTOMIZE_SRC = REPO_ROOT / "sitecustomize.py"   # your file lives next to the launcher
+
+def _read_shebang_python(bin_name: str) -> str | None:
+    """Return absolute python path from the shebang of a console_script (trl/accelerate)."""
+    try:
+        bin_path = shutil.which(bin_name)
+        if not bin_path:
+            return None
+        with open(bin_path, "rb") as f:
+            first = f.readline().decode("utf-8", "ignore").strip()
+        if first.startswith("#!"):
+            py = first[2:].strip().split()[0]
+            return py
+    except Exception:
+        return None
+
+def _py_exec(pybin: str, code: str) -> str:
+    out = subprocess.check_output([pybin, "-c", code], text=True)
+    return out.strip()
+
+def _install_into_site_packages(pybin: str, src_file: Path):
+    """Copy sitecustomize.py and drop a .pth hook into pybin's site-packages."""
+    code = textwrap.dedent("""
+        import site, sys, os, shutil, json
+        paths = []
+        try: paths += site.getsitepackages()
+        except Exception: pass
+        paths.append(site.getusersitepackages())
+        paths = [p for p in paths if p and os.path.isdir(p)]
+        print(json.dumps(paths))
+    """)
+    import json
+    paths = json.loads(_py_exec(pybin, code))
+    if not paths:
+        raise RuntimeError(f"No site-packages found for {pybin}")
+
+    # Prefer a writable path
+    target = None
+    for p in paths:
+        if os.access(p, os.W_OK):
+            target = p; break
+    if target is None:
+        # last resort: try user site even if not marked writable
+        target = paths[-1]
+
+    target_py = os.path.join(target, "sitecustomize.py")
+    target_pth = os.path.join(target, "mura_sitecustomize.pth")
+
+    # copy sitecustomize.py
+    shutil.copy2(str(src_file), target_py)
+
+    # write a .pth that forces import (belt & suspenders)
+    with open(target_pth, "w") as f:
+        f.write(str(REPO_ROOT) + "\n")
+        f.write("import sitecustomize\n")
+
+    print(f"[launcher] Installed sitecustomize -> {target_py}")
+    print(f"[launcher] Installed .pth hook -> {target_pth}")
+
+def _ensure_sitecustomize_everywhere():
+    if not SITECUSTOMIZE_SRC.exists():
+        print(f"[launcher] WARNING: {SITECUSTOMIZE_SRC} not found; skipping patch install.")
+        return
+    # install into the TRL env (and Accelerate env if different)
+    seen = set()
+    for bin_name in ("trl", "accelerate"):
+        py = _read_shebang_python(bin_name)
+        if py and py not in seen:
+            try:
+                _install_into_site_packages(py, SITECUSTOMIZE_SRC)
+                seen.add(py)
+            except Exception as e:
+                print(f"[launcher] WARNING: failed installing into {py}: {e}")
+
+    # Also export env so it propagates to ranks
+    os.environ["PYTHONPATH"] = f"{str(REPO_ROOT)}:{os.environ.get('PYTHONPATH', '')}"
+    os.environ.setdefault("USE_MURA", "1")               # enable your patch by default
+    os.environ.setdefault("LORA_NS_NO_COMPILE", "0")     # keep torch.compile ON
+
+# Call this before building any commands
+_ensure_sitecustomize_everywhere()
+# --- end force-install block ---
+
 # -------------------------------------------------
 # Accelerate prefix: 8 GPUs on a single node
 # Override by exporting ACCEL_PREFIX if you want DS/FSDP.
 # -------------------------------------------------
 ACCEL_PREFIX = os.environ.get(
     "ACCEL_PREFIX",
-    "accelerate launch --num_processes 8 --mixed_precision bf16 --gpu_ids all --rdzv_backend c10d"
+    "USE_MURA=1 accelerate launch --num_processes 8 --mixed_precision bf16 --gpu_ids all --rdzv_backend c10d"
 )
 
 def with_accel(cmd: str) -> str:
@@ -107,10 +195,10 @@ def all_experiments():
 
     # ---- SFT (LoRA rank 256, LR 2e-4) ----
     sft_defs = [
-        ("sft-llama-1b-tulu3",       "meta-llama/Llama-3.2-1B-Instruct", "allenai/tulu-3-sft-mixture"),
-        ("sft-llama-1b-openthoughts","meta-llama/Llama-3.2-1B-Instruct", "open-thoughts/OpenThoughts-114k"),
-        ("sft-llama-8b-tulu3",       "meta-llama/Llama-3.1-8B-Instruct", "allenai/tulu-3-sft-mixture"),
-        ("sft-llama-8b-openthoughts","meta-llama/Llama-3.1-8B-Instruct", "open-thoughts/OpenThoughts-114k"),
+        ("sft-llama-1b-tulu3-mura",       "meta-llama/Llama-3.2-1B-Instruct", "allenai/tulu-3-sft-mixture"),
+        ("sft-llama-1b-openthoughts-mura","meta-llama/Llama-3.2-1B-Instruct", "open-thoughts/OpenThoughts-114k"),
+        ("sft-llama-8b-tulu3-mura",       "meta-llama/Llama-3.1-8B-Instruct", "allenai/tulu-3-sft-mixture"),
+        ("sft-llama-8b-openthoughts-mura","meta-llama/Llama-3.1-8B-Instruct", "open-thoughts/OpenThoughts-114k"),
     ]
     for name, model, dataset in sft_defs:
         outdir = f"runs/{name}"
@@ -124,9 +212,9 @@ def all_experiments():
     # ---- GRPO (LoRA small rank) ----
     grpo_py = os.environ.get("GRPO_PY", "grpo.py")
     grpo_defs = [
-        ("grpo-llama8b-gsm8k",   "meta-llama/Llama-3.1-8B-Base", "openai/gsm8k"),
-        ("grpo-llama8b-deepmath","meta-llama/Llama-3.1-8B-Base", "HuggingFaceH4/DeepMath-103K"),
-        ("grpo-qwen8b-deepmath", "Qwen/Qwen3-8B-Base",           "HuggingFaceH4/DeepMath-103K"),
+        ("grpo-llama8b-gsm8k-mura",   "meta-llama/Llama-3.1-8B-Base", "openai/gsm8k"),
+        ("grpo-llama8b-deepmath-mura","meta-llama/Llama-3.1-8B-Base", "HuggingFaceH4/DeepMath-103K"),
+        ("grpo-qwen8b-deepmath-mura", "Qwen/Qwen3-8B-Base",           "HuggingFaceH4/DeepMath-103K"),
     ]
     for name, model, dataset in grpo_defs:
         outdir = f"runs/{name}"
@@ -135,7 +223,7 @@ def all_experiments():
             outdir=outdir, run_name=name,
             use_lora=True, lr="5e-5",
             lora_r=1, lora_alpha=32, lora_dropout=0.0,
-            per_device=1, grad_accum=4,
+            per_device=4, grad_accum=1,
             num_generations=8, gen_batch=8
         )]
 

@@ -6,6 +6,7 @@ from torch.autograd import Function
 
 _USE_COMPILE = os.environ.get("LORA_NS_NO_COMPILE", "0") != "1"
 _USE_MURA = os.environ.get("USE_MURA", "0") == "1"
+_USE_MURA_OG = os.environ.get("USE_MURA_OG", "0") == "1"
 
 def _zeropower_via_newtonschulz5_impl(G, steps: int):
     assert G.ndim >= 2
@@ -49,8 +50,11 @@ class LinearFunction(Function):
         x, weight, u, v = ctx.saved_tensors
         s = ctx.scale
         # grad_x via effective transpose
-        M_T = weight + s * (v.t().matmul(u.t()))
+        delta_w = (v.t().matmul(u.t()))
+        M_T = weight + s * delta_w
         grad_x = grad_out.matmul(M_T.to(grad_out.dtype))
+        if _USE_MURA_OG:
+            grad_x = grad_x - delta_w
         # collapse batch dims
         if x.ndim == 2:
             x2, go2 = x, grad_out
@@ -108,7 +112,7 @@ class LoraLinearNS(nn.Module):
 # --- Patch PEFT before model construction so VERL uses our class on the ACTOR
 try:
     import peft.tuners.lora.layer as loralayer
-    if _USE_MURA:
+    if _USE_MURA or _USE_MURA_OG:
         loralayer.LoraLinear = LoraLinearNS
         print("[sitecustomize] Patched PEFT LoraLinear -> LoraLinearNS (FSDP-safe; alpha/r; NS backward).")
     else:
